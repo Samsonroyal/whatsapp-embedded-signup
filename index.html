@@ -177,6 +177,45 @@
       }
     });
 
+    // ─── Exchange authorization code for access token ───────────────
+    async function exchangeCodeForAccessToken(code) {
+      try {
+        setStatus('Exchanging code for access token...', 'info');
+        
+        // First, try to fetch from your server if available
+        // If you have a backend, call your token exchange endpoint here
+        // For now, we'll show instructions for server-side exchange
+        console.log('Code to exchange:', code);
+        
+        // You would call your server like:
+        // const response = await fetch('/api/facebook/exchange-token', {
+        //   method: 'POST',
+        //   headers: { 'Content-Type': 'application/json' },
+        //   body: JSON.stringify({ code })
+        // });
+        // const data = await response.json();
+        // return data.access_token;
+        
+        // For standalone HTML, show manual exchange instructions
+        setStatus(
+          'Code received! To exchange for an access token, use your backend or WhatsApp Business Manager:<br>' +
+          'Endpoint: <code>GET https://graph.facebook.com/v25.0/oauth/access_token</code><br>' +
+          'Parameters:<br>' +
+          '• client_id={YOUR_APP_ID}<br>' +
+          '• client_secret={YOUR_APP_SECRET}<br>' +
+          '• code=' + code.substring(0, 20) + '...<br><br>' +
+          'Copy the returned <strong>access_token</strong> and manually save it, or implement the server-side exchange.',
+          'info'
+        );
+        
+        return null;
+      } catch (err) {
+        console.error('Error exchanging code:', err);
+        setStatus('Error exchanging code. See console for details.', 'error');
+        return null;
+      }
+    }
+
     // ─── Facebook Login callback ─────────────────────────────────────
     function fbLoginCallback(response) {
       if (response.authResponse) {
@@ -184,7 +223,7 @@
         const access_token = response.authResponse.accessToken || null;
         const expires_in = response.authResponse.expiresIn || null;
 
-        // Save the exchange code, access token (if present) + any signup data we captured
+        // Save the exchange code + any signup data we captured
         saveToken({
           code,
           access_token,
@@ -193,11 +232,18 @@
           waba_id: lastSignupData.waba_id || null
         });
 
-        setStatus(
-          'Token saved! Exchange this code server-side for a permanent access token via:<br>' +
-          '<code>GET graph.facebook.com/v25.0/oauth/access_token?client_id={APP_ID}&client_secret={APP_SECRET}&code={CODE}</code>',
-          'success'
-        );
+        // If we got a token directly from FB SDK, save it immediately
+        if (access_token) {
+          setStatus(
+            'Access token received and saved to localStorage! ' +
+            'You can now use it to sign/register your WhatsApp number.',
+            'success'
+          );
+        } else {
+          // No token from SDK, need to exchange code server-side
+          exchangeCodeForAccessToken(code);
+        }
+        
         lastSignupData = {};
       } else {
         setStatus('Login failed or was cancelled.', 'error');
