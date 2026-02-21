@@ -119,16 +119,25 @@
         <div class="token-entry">
           <div class="label">Code / Token</div>
           <div class="value">${escapeHtml(t.code || 'N/A')}</div>
+          ${t.access_token ? `<div class="label" style="margin-top:8px;">Access Token</div><div class="value">${escapeHtml(maskToken(t.access_token))}</div>` : ''}
           ${t.phone_number_id ? `<div class="label" style="margin-top:8px;">Phone Number ID</div><div class="value">${escapeHtml(t.phone_number_id)}</div>` : ''}
           ${t.waba_id ? `<div class="label" style="margin-top:8px;">WABA ID</div><div class="value">${escapeHtml(t.waba_id)}</div>` : ''}
           <div class="label" style="margin-top:8px;">Stored</div>
           <div class="value">${new Date(t.stored_at).toLocaleString()}</div>
           <div class="actions" style="margin-top:8px;">
             <button class="btn-sm btn-copy" onclick="copyToClipboard('${escapeHtml(t.code || '')}')">Copy Code</button>
+            ${t.access_token ? `<button class="btn-sm btn-copy" onclick="copyToClipboard('${escapeHtml(t.access_token)}')">Copy Access Token</button>` : ''}
+            <button class="btn-sm" onclick="useTokenForRegistration('${t.id}')">Use Token</button>
             <button class="btn-sm btn-danger" onclick="removeToken('${t.id}')">Remove</button>
           </div>
         </div>
       `).join('');
+    }
+
+    function maskToken(token) {
+      if (!token) return '';
+      if (token.length <= 16) return token;
+      return token.slice(0, 8) + '…' + token.slice(-6);
     }
 
     function escapeHtml(str) {
@@ -172,10 +181,14 @@
     function fbLoginCallback(response) {
       if (response.authResponse) {
         const code = response.authResponse.code;
+        const access_token = response.authResponse.accessToken || null;
+        const expires_in = response.authResponse.expiresIn || null;
 
-        // Save the exchange code + any signup data we captured
+        // Save the exchange code, access token (if present) + any signup data we captured
         saveToken({
           code,
+          access_token,
+          expires_in,
           phone_number_id: lastSignupData.phone_number_id || null,
           waba_id: lastSignupData.waba_id || null
         });
@@ -189,6 +202,35 @@
       } else {
         setStatus('Login failed or was cancelled.', 'error');
       }
+    }
+
+    // Retrieve a token by storage id
+    function getTokenById(id) {
+      return getStoredTokens().find(t => t.id === id) || null;
+    }
+
+    // Return the most recently stored token (useful for quick registration flows)
+    function getLatestToken() {
+      const tokens = getStoredTokens();
+      if (!tokens.length) return null;
+      // assume last pushed is the most recent
+      return tokens[tokens.length - 1];
+    }
+
+    // Example helper: use stored token to perform registration/signing.
+    // Replace this with your server call or API usage as needed.
+    function useTokenForRegistration(id) {
+      const entry = id ? getTokenById(id) : getLatestToken();
+      if (!entry) return setStatus('No token found to use for registration.', 'error');
+      if (!entry.access_token) return setStatus('Selected entry does not contain an access token. Exchange the code server-side to obtain one.', 'error');
+
+      // Example: call your server to register/sign the phone number using the access token
+      // fetch('/register-whatsapp', { method: 'POST', body: JSON.stringify({ access_token: entry.access_token, phone_number_id: entry.phone_number_id }) })
+      //   .then(r => r.json()).then(res => setStatus('Registration request sent.', 'info'))
+      //   .catch(err => setStatus('Registration failed: ' + err.message, 'error'));
+
+      console.log('Using access token for registration:', entry.access_token, 'phone_number_id:', entry.phone_number_id);
+      setStatus('Using stored access token to register phone number (check console).', 'info');
     }
 
     // ─── Launch Embedded Signup ──────────────────────────────────────
