@@ -19,8 +19,13 @@ require('dotenv').config();
 
 const app = express();
 
-// Middleware
-app.use(cors());
+// Middleware — explicit CORS so preflight (OPTIONS) requests succeed
+app.use(cors({
+  origin: true,           // reflect the request origin (allows any origin)
+  methods: ['GET', 'POST', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: true
+}));
 app.use(express.json());
 
 // Health check endpoint
@@ -54,15 +59,18 @@ app.post('/api/exchange-token', async (req, res) => {
     console.log('Exchanging authorization code for access token...');
     console.log('Code (first 20 chars):', code.substring(0, 20) + '...');
 
-    // Exchange code for access token
-    const tokenUrl = new URL('https://graph.facebook.com/v25.0/oauth/access_token');
-    tokenUrl.searchParams.append('client_id', appId);
-    tokenUrl.searchParams.append('client_secret', appSecret);
-    tokenUrl.searchParams.append('code', code);
+    // Exchange code for access token (POST with JSON body per Facebook docs)
+    const tokenUrl = 'https://graph.facebook.com/v22.0/oauth/access_token';
 
-    const response = await fetch(tokenUrl.toString(), {
-      method: 'GET',
-      headers: { 'Content-Type': 'application/json' }
+    const response = await fetch(tokenUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        client_id: appId,
+        client_secret: appSecret,
+        code,
+        grant_type: 'authorization_code'
+      })
     });
 
     const data = await response.json();
