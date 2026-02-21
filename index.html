@@ -29,6 +29,13 @@
     .btn-copy { color: #1877f2; }
     .actions { display: flex; gap: 8px; }
   </style>
+  <script>
+    // Configure backend API URL (set before page load)
+    // For local development: http://localhost:3000
+    // For Railway deployment: https://your-railway-app.up.railway.app
+    window.BACKEND_API_URL = window.BACKEND_API_URL || 'http://localhost:3000';
+    console.log('Backend API URL:', window.BACKEND_API_URL);
+  </script>
 </head>
 <body>
   <div id="fb-root"></div>
@@ -57,7 +64,124 @@
     </div>
   </div>
 
+  <div class="card">
+    <h1>Connect to IntelliBiz</h1>
+    <p class="subtitle">Link your WhatsApp account with IntelliBiz platform</p>
+    <div style="display: flex; flex-direction: column; gap: 16px;">
+      <div>
+        <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 8px;">API Token</label>
+        <input 
+          type="password" 
+          id="api-token-input" 
+          placeholder="Enter your IntelliBiz API token" 
+          style="width: 100%; padding: 8px 12px; border: 1px solid #ccc; border-radius: 4px; font-size: 14px;"
+        />
+      </div>
+      <div>
+        <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 8px;">User ID</label>
+        <input 
+          type="text" 
+          id="user-id-input" 
+          placeholder="Enter your User ID" 
+          style="width: 100%; padding: 8px 12px; border: 1px solid #ccc; border-radius: 4px; font-size: 14px;"
+        />
+      </div>
+      <button 
+        class="fb-btn" 
+        onclick="handleConnectToIntelliBiz()"
+        style="background-color: #10b981; align-self: flex-start;"
+      >
+        Connect Account
+      </button>
+      <p style="font-size: 12px; color: #65676b;">
+        ℹ️ Your credentials will be used to connect your WhatsApp Business account to IntelliBiz. Your API token is never stored.
+      </p>
+    </div>
+  </div>
+
   <script>
+    // ─── Configuration for IntelliBiz API integration ──────────────
+    const INTELLIBIZ_API_BASE_URL = 'https://intelli-app.com/api/v1';
+    const INTELLIBIZ_ENDPOINT = '/whatsapp/account/connect';
+
+    // Store user credentials for API calls
+    let userCredentials = {
+      apiToken: null,
+      user_id: null
+    };
+
+    function setUserCredentials(apiToken, userId) {
+      userCredentials.apiToken = apiToken;
+      userCredentials.user_id = userId;
+      console.log('User credentials set:', { apiToken: apiToken ? 'set' : 'not set', user_id: userId });
+    }
+
+    // Connect WhatsApp account to IntelliBiz backend
+    async function connectWhatsAppAccount() {
+      const latestToken = getLatestToken();
+      
+      if (!latestToken || !latestToken.access_token || !latestToken.waba_id) {
+        setStatus('Missing access token or WABA ID. Please complete the Facebook login first.', 'error');
+        return false;
+      }
+
+      if (!userCredentials.apiToken || !userCredentials.user_id) {
+        setStatus('Missing API token or User ID. Please enter your credentials.', 'error');
+        return false;
+      }
+
+      setStatus('Connecting WhatsApp account to IntelliBiz...', 'info');
+      
+      try {
+        const payload = {
+          apiToken: userCredentials.apiToken,
+          user_id: userCredentials.user_id,
+          whatsapp_business_account_id: latestToken.waba_id,
+          access_token: latestToken.access_token
+        };
+
+        console.log('Connecting WhatsApp account with payload:', {
+          ...payload,
+          access_token: '[REDACTED]',
+          apiToken: '[REDACTED]'
+        });
+
+        const response = await fetch(INTELLIBIZ_API_BASE_URL + INTELLIBIZ_ENDPOINT, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
+          },
+          body: JSON.stringify(payload)
+        });
+
+        const data = await response.json();
+        console.log('WhatsApp account connection response:', data);
+
+        if (!response.ok) {
+          throw new Error(data.error || data.message || `Server returned ${response.status}`);
+        }
+
+        setStatus('✅ WhatsApp account connected successfully to IntelliBiz!', 'success');
+        
+        // Save connection response to localStorage
+        const connectedTokens = getStoredTokens();
+        const lastToken = connectedTokens[connectedTokens.length - 1];
+        if (lastToken) {
+          lastToken.intelli_biz_connected = true;
+          lastToken.intelli_biz_response = data;
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(connectedTokens));
+          renderTokens();
+        }
+
+        return true;
+      } catch (err) {
+        console.error('Error connecting WhatsApp account:', err);
+        setStatus('Error connecting account: ' + err.message, 'error');
+        return false;
+      }
+    }
+
     // ─── Token Storage ───────────────────────────────────────────────
     const STORAGE_KEY = 'wa_signup_tokens';
 
@@ -124,6 +248,12 @@
           ${t.waba_id ? `<div class="label" style="margin-top:8px;">WABA ID</div><div class="value">${escapeHtml(t.waba_id)}</div>` : ''}
           <div class="label" style="margin-top:8px;">Stored</div>
           <div class="value">${new Date(t.stored_at).toLocaleString()}</div>
+          ${t.intelli_biz_connected ? `
+            <div style="margin-top:8px; padding:8px; background:#e6f4ea; border-radius:4px;">
+              <div class="label" style="color:#1e7e34;">✅ IntelliBiz Connected</div>
+              <div class="value" style="color:#1e7e34; font-size:12px; margin-top:4px;">${new Date(t.intelli_biz_connected).toLocaleString()}</div>
+            </div>
+          ` : ''}
           <div class="actions" style="margin-top:8px;">
             <button class="btn-sm btn-copy" onclick="copyCodeById('${t.id}')">Copy Code</button>
             ${t.access_token ? `<button class="btn-sm btn-copy" onclick="copyTokenById('${t.id}')">Copy Access Token</button>` : ''}
@@ -181,67 +311,75 @@
     async function exchangeCodeForAccessToken(code) {
       try {
         setStatus('Exchanging code for access token...', 'info');
-        
-        // First, try to fetch from your server if available
-        // If you have a backend, call your token exchange endpoint here
-        // For now, we'll show instructions for server-side exchange
         console.log('Code to exchange:', code);
         
-        // You would call your server like:
-        // const response = await fetch('/api/facebook/exchange-token', {
-        //   method: 'POST',
-        //   headers: { 'Content-Type': 'application/json' },
-        //   body: JSON.stringify({ code })
-        // });
-        // const data = await response.json();
-        // return data.access_token;
+        // Get backend URL from window variable or fallback to relative path
+        const backendUrl = window.BACKEND_API_URL || window.location.origin;
+        const exchangeUrl = backendUrl + '/api/exchange-token';
         
-        // For standalone HTML, show manual exchange instructions
-        setStatus(
-          'Code received! To exchange for an access token, use your backend or WhatsApp Business Manager:<br>' +
-          'Endpoint: <code>GET https://graph.facebook.com/v25.0/oauth/access_token</code><br>' +
-          'Parameters:<br>' +
-          '• client_id={YOUR_APP_ID}<br>' +
-          '• client_secret={YOUR_APP_SECRET}<br>' +
-          '• code=' + code.substring(0, 20) + '...<br><br>' +
-          'Copy the returned <strong>access_token</strong> and manually save it, or implement the server-side exchange.',
-          'info'
-        );
+        console.log('Calling backend at:', exchangeUrl);
         
-        return null;
+        const response = await fetch(exchangeUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ code })
+        });
+
+        const data = await response.json();
+        console.log('Token exchange response:', {
+          status: response.status,
+          hasAccessToken: !!data.access_token,
+          error: data.error
+        });
+
+        if (!response.ok) {
+          throw new Error(data.error || 'Failed to exchange code');
+        }
+
+        if (data.access_token) {
+          setStatus('Access token acquired! Saving to localStorage...', 'success');
+          return data.access_token;
+        } else {
+          throw new Error('No access token in response');
+        }
       } catch (err) {
         console.error('Error exchanging code:', err);
-        setStatus('Error exchanging code. See console for details.', 'error');
+        setStatus('Error exchanging code: ' + err.message + '. Check console for details.', 'error');
         return null;
       }
     }
 
     // ─── Facebook Login callback ─────────────────────────────────────
-    function fbLoginCallback(response) {
+    async function fbLoginCallback(response) {
       if (response.authResponse) {
         const code = response.authResponse.code;
-        const access_token = response.authResponse.accessToken || null;
+        const sdk_access_token = response.authResponse.accessToken || null;
         const expires_in = response.authResponse.expiresIn || null;
 
-        // Save the exchange code + any signup data we captured
+        // First, always try to exchange the code for a server token (more secure)
+        let access_token = await exchangeCodeForAccessToken(code);
+        
+        // Fallback to SDK token if exchange fails
+        if (!access_token && sdk_access_token) {
+          console.warn('Using SDK access token as fallback');
+          access_token = sdk_access_token;
+        }
+
+        // Save the code, access token, and signup data
         saveToken({
           code,
-          access_token,
+          access_token: access_token || null,
           expires_in,
           phone_number_id: lastSignupData.phone_number_id || null,
           waba_id: lastSignupData.waba_id || null
         });
 
-        // If we got a token directly from FB SDK, save it immediately
         if (access_token) {
           setStatus(
             'Access token received and saved to localStorage! ' +
             'You can now use it to sign/register your WhatsApp number.',
             'success'
           );
-        } else {
-          // No token from SDK, need to exchange code server-side
-          exchangeCodeForAccessToken(code);
         }
         
         lastSignupData = {};
@@ -290,6 +428,24 @@
       const entry = getTokenById(id);
       if (!entry || !entry.code) return setStatus('No code available to copy.', 'error');
       copyToClipboard(entry.code);
+    }
+
+    // Handler for IntelliBiz connection
+    function handleConnectToIntelliBiz() {
+      const apiToken = document.getElementById('api-token-input').value;
+      const userId = document.getElementById('user-id-input').value;
+
+      if (!apiToken || !userId) {
+        setStatus('Please enter both API token and User ID.', 'error');
+        return;
+      }
+
+      setUserCredentials(apiToken, userId);
+      connectWhatsAppAccount();
+
+      // Clear input fields after submission
+      document.getElementById('api-token-input').value = '';
+      document.getElementById('user-id-input').value = '';
     }
 
     // ─── Launch Embedded Signup ──────────────────────────────────────
