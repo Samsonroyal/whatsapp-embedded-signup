@@ -125,8 +125,8 @@
           <div class="label" style="margin-top:8px;">Stored</div>
           <div class="value">${new Date(t.stored_at).toLocaleString()}</div>
           <div class="actions" style="margin-top:8px;">
-            <button class="btn-sm btn-copy" onclick="copyToClipboard('${escapeHtml(t.code || '')}')">Copy Code</button>
-            ${t.access_token ? `<button class="btn-sm btn-copy" onclick="copyToClipboard('${escapeHtml(t.access_token)}')">Copy Access Token</button>` : ''}
+            <button class="btn-sm btn-copy" onclick="copyCodeById('${t.id}')">Copy Code</button>
+            ${t.access_token ? `<button class="btn-sm btn-copy" onclick="copyTokenById('${t.id}')">Copy Access Token</button>` : ''}
             <button class="btn-sm" onclick="useTokenForRegistration('${t.id}')">Use Token</button>
             <button class="btn-sm btn-danger" onclick="removeToken('${t.id}')">Remove</button>
           </div>
@@ -231,6 +231,19 @@
 
       console.log('Using access token for registration:', entry.access_token, 'phone_number_id:', entry.phone_number_id);
       setStatus('Using stored access token to register phone number (check console).', 'info');
+    }
+
+    // Copy helpers that use the stored token (avoid HTML-escaping issues)
+    function copyTokenById(id) {
+      const entry = getTokenById(id);
+      if (!entry || !entry.access_token) return setStatus('No access token available to copy.', 'error');
+      copyToClipboard(entry.access_token);
+    }
+
+    function copyCodeById(id) {
+      const entry = getTokenById(id);
+      if (!entry || !entry.code) return setStatus('No code available to copy.', 'error');
+      copyToClipboard(entry.code);
     }
 
     // ─── Launch Embedded Signup ──────────────────────────────────────
