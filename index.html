@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Embedded Signup SDK</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Helvetica Neue", Helvetica, Arial, sans-serif; background: #f0f2f5; color: #1c1e21; min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 40px 20px; }
+    .card { background: #fff; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); padding: 32px; max-width: 640px; width: 100%; margin-bottom: 24px; }
+    h1 { font-size: 24px; margin-bottom: 8px; }
+    p.subtitle { color: #65676b; margin-bottom: 24px; }
+    .fb-btn { background-color: #1877f2; border: 0; border-radius: 6px; color: #fff; cursor: pointer; font-family: inherit; font-size: 16px; font-weight: 600; height: 44px; padding: 0 24px; display: inline-flex; align-items: center; gap: 8px; transition: background-color 0.2s; }
+    .fb-btn:hover { background-color: #166fe5; }
+    .fb-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+    h2 { font-size: 18px; margin: 24px 0 12px; }
+    pre { background: #f0f2f5; border-radius: 6px; padding: 16px; overflow-x: auto; font-family: "SF Mono", SFMono-Regular, ui-monospace, Menlo, Monaco, "Cascadia Mono", "Courier New", monospace; font-size: 13px; white-space: pre-wrap; word-break: break-all; max-height: 300px; overflow-y: auto; }
+    .status { padding: 12px 16px; border-radius: 6px; margin: 16px 0; font-size: 14px; }
+    .status.success { background: #e6f4ea; color: #1e7e34; }
+    .status.error { background: #fce8e6; color: #c5221f; }
+    .status.info { background: #e8f0fe; color: #1a73e8; }
+    .token-list { margin-top: 16px; }
+    .token-entry { background: #f0f2f5; border-radius: 6px; padding: 12px 16px; margin-bottom: 8px; font-size: 13px; position: relative; }
+    .token-entry .label { font-weight: 600; color: #65676b; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; }
+    .token-entry .value { margin-top: 4px; word-break: break-all; }
+    .btn-sm { background: #e4e6eb; border: 0; border-radius: 4px; padding: 6px 12px; cursor: pointer; font-size: 12px; font-weight: 600; margin-top: 8px; }
+    .btn-sm:hover { background: #d8dadf; }
+    .btn-danger { color: #c5221f; }
+    .btn-copy { color: #1877f2; }
+    .actions { display: flex; gap: 8px; }
+  </style>
+</head>
+<body>
+  <div id="fb-root"></div>
+
+  <h1 style="font-size: 32px; margin-bottom: 32px; text-align: center;">Embedded Signup</h1>
+
+  <div class="card" style="text-align: center;">
+   
+    <p class="subtitle">Connect your WhatsApp number via Facebook Embedded Signup</p>
+    <button id="login-btn" class="fb-btn" onclick="launchWhatsAppSignup()" disabled>
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="#fff"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg>
+      Login with Facebook
+    </button>
+    <div id="status"></div>
+  </div>
+
+  <div class="card">
+    <h1>Stored Tokens</h1>
+    <p class="subtitle">Tokens are saved in localStorage for future retrieval</p>
+    <div id="token-list" class="token-list">
+      <p style="color:#65676b; font-size:14px;">No tokens stored yet.</p>
+    </div>
+    <div class="actions" style="margin-top:16px;">
+      <button class="btn-sm" onclick="exportTokens()">Export All</button>
+      <button class="btn-sm btn-danger" onclick="clearAllTokens()">Clear All</button>
+    </div>
+  </div>
+
+  <script>
+    // ─── Token Storage ───────────────────────────────────────────────
+    const STORAGE_KEY = 'wa_signup_tokens';
+
+    function getStoredTokens() {
+      try {
+        return JSON.parse(localStorage.getItem(STORAGE_KEY)) || [];
+      } catch {
+        return [];
+      }
+    }
+
+    function saveToken(entry) {
+      const tokens = getStoredTokens();
+      tokens.push({
+        ...entry,
+        id: crypto.randomUUID(),
+        stored_at: new Date().toISOString()
+      });
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(tokens));
+      renderTokens();
+    }
+
+    function removeToken(id) {
+      const tokens = getStoredTokens().filter(t => t.id !== id);
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(tokens));
+      renderTokens();
+    }
+
+    function clearAllTokens() {
+      if (confirm('Remove all stored tokens?')) {
+        localStorage.removeItem(STORAGE_KEY);
+        renderTokens();
+      }
+    }
+
+    function copyToClipboard(text) {
+      navigator.clipboard.writeText(text).then(() => setStatus('Copied to clipboard', 'success'));
+    }
+
+    function exportTokens() {
+      const tokens = getStoredTokens();
+      if (!tokens.length) return setStatus('No tokens to export', 'error');
+      const blob = new Blob([JSON.stringify(tokens, null, 2)], { type: 'application/json' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `wa-tokens-${Date.now()}.json`;
+      a.click();
+      URL.revokeObjectURL(a.href);
+    }
+
+    function renderTokens() {
+      const container = document.getElementById('token-list');
+      const tokens = getStoredTokens();
+      if (!tokens.length) {
+        container.innerHTML = '<p style="color:#65676b;font-size:14px;">No tokens stored yet.</p>';
+        return;
+      }
+      container.innerHTML = tokens.map(t => `
+        <div class="token-entry">
+          <div class="label">Code / Token</div>
+          <div class="value">${escapeHtml(t.code || 'N/A')}</div>
+          ${t.phone_number_id ? `<div class="label" style="margin-top:8px;">Phone Number ID</div><div class="value">${escapeHtml(t.phone_number_id)}</div>` : ''}
+          ${t.waba_id ? `<div class="label" style="margin-top:8px;">WABA ID</div><div class="value">${escapeHtml(t.waba_id)}</div>` : ''}
+          <div class="label" style="margin-top:8px;">Stored</div>
+          <div class="value">${new Date(t.stored_at).toLocaleString()}</div>
+          <div class="actions" style="margin-top:8px;">
+            <button class="btn-sm btn-copy" onclick="copyToClipboard('${escapeHtml(t.code || '')}')">Copy Code</button>
+            <button class="btn-sm btn-danger" onclick="removeToken('${t.id}')">Remove</button>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    function escapeHtml(str) {
+      const d = document.createElement('div');
+      d.textContent = str;
+      return d.innerHTML;
+    }
+
+    function setStatus(msg, type) {
+      document.getElementById('status').innerHTML = `<div class="status ${type}">${msg}</div>`;
+    }
+
+    // Render any previously stored tokens on load
+    renderTokens();
+
+    // ─── Embedded Signup event listener ──────────────────────────────
+    let lastSignupData = {};
+
+    window.addEventListener('message', (event) => {
+      if (event.origin !== "https://www.facebook.com" && event.origin !== "https://web.facebook.com") return;
+      try {
+        const data = JSON.parse(event.data);
+        if (data.type === 'WA_EMBEDDED_SIGNUP') {
+          if (data.event === 'FINISH') {
+            const { phone_number_id, waba_id } = data.data;
+            lastSignupData = { phone_number_id, waba_id };
+            setStatus(`Signup complete — Phone: ${phone_number_id}, WABA: ${waba_id}`, 'success');
+          } else if (data.event === 'CANCEL') {
+            setStatus(`Signup cancelled at step: ${data.data.current_step}`, 'error');
+          } else if (data.event === 'ERROR') {
+            setStatus(`Signup error: ${data.data.error_message}`, 'error');
+          }
+        }
+        console.log('Signup event:', data);
+      } catch {
+        console.log('Non-JSON response', event.data);
+      }
+    });
+
+    // ─── Facebook Login callback ─────────────────────────────────────
+    function fbLoginCallback(response) {
+      if (response.authResponse) {
+        const code = response.authResponse.code;
+
+        // Save the exchange code + any signup data we captured
+        saveToken({
+          code,
+          phone_number_id: lastSignupData.phone_number_id || null,
+          waba_id: lastSignupData.waba_id || null
+        });
+
+        setStatus(
+          'Token saved! Exchange this code server-side for a permanent access token via:<br>' +
+          '<code>GET graph.facebook.com/v25.0/oauth/access_token?client_id={APP_ID}&client_secret={APP_SECRET}&code={CODE}</code>',
+          'success'
+        );
+        lastSignupData = {};
+      } else {
+        setStatus('Login failed or was cancelled.', 'error');
+      }
+    }
+
+    // ─── Launch Embedded Signup ──────────────────────────────────────
+    function launchWhatsAppSignup() {
+      if (typeof FB === 'undefined') {
+        setStatus('Facebook SDK is still loading. Please try again in a moment.', 'error');
+        return;
+      }
+      FB.login(fbLoginCallback, {
+        config_id: '1375843820179450',
+        response_type: 'code',
+        override_default_response_type: true,
+        extras: { "version": "v3" }
+      });
+    }
+
+    // ─── Facebook SDK init ───────────────────────────────────────────
+    window.fbAsyncInit = function () {
+      FB.init({
+        appId: '1096652478976715',
+        autoLogAppEvents: true,
+        xfbml: true,
+        version: 'v25.0'
+      });
+      document.getElementById('login-btn').disabled = false;
+    };
+
+    // If SDK fails to load after 10 seconds, enable button anyway with warning
+    setTimeout(function() {
+      if (typeof FB === 'undefined') {
+        document.getElementById('login-btn').disabled = false;
+        setStatus('Facebook SDK failed to load. Check your internet connection.', 'error');
+      }
+    }, 10000);
+  </script>
+
+  <script async defer crossorigin="anonymous" src="https://connect.facebook.net/en_US/sdk.js"></script>
+</body>
+</html>
