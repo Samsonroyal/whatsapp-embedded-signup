@@ -349,37 +349,33 @@
     }
 
     // ─── Facebook Login callback ─────────────────────────────────────
-    async function fbLoginCallback(response) {
+    function fbLoginCallback(response) {
       if (response.authResponse) {
         const code = response.authResponse.code;
         const sdk_access_token = response.authResponse.accessToken || null;
         const expires_in = response.authResponse.expiresIn || null;
 
-        // First, always try to exchange the code for a server token (more secure)
-        let access_token = await exchangeCodeForAccessToken(code);
-        
-        // Fallback to SDK token if exchange fails
-        if (!access_token && sdk_access_token) {
-          console.warn('Using SDK access token as fallback');
-          access_token = sdk_access_token;
-        }
-
-        // Save the code, access token, and signup data
+        // Save immediately with code
         saveToken({
           code,
-          access_token: access_token || null,
+          access_token: sdk_access_token || null,
           expires_in,
           phone_number_id: lastSignupData.phone_number_id || null,
           waba_id: lastSignupData.waba_id || null
         });
 
-        if (access_token) {
-          setStatus(
-            'Access token received and saved to localStorage! ' +
-            'You can now use it to sign/register your WhatsApp number.',
-            'success'
-          );
-        }
+        // Exchange code asynchronously (don't await here)
+        exchangeCodeForAccessToken(code).then((access_token) => {
+          if (access_token) {
+            // Update the token with the exchanged access token
+            const tokens = getStoredTokens();
+            if (tokens.length > 0) {
+              tokens[tokens.length - 1].access_token = access_token;
+              localStorage.setItem(STORAGE_KEY, JSON.stringify(tokens));
+              renderTokens();
+            }
+          }
+        });
         
         lastSignupData = {};
       } else {
