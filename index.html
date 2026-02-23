@@ -44,6 +44,19 @@
   <div class="card" style="text-align: center;">
    
     <p class="subtitle">Connect your WhatsApp number via Facebook Embedded Signup</p>
+    <div style="margin-bottom: 16px;">
+      <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 8px;">Two-Step Verification PIN</label>
+      <input
+        type="text"
+        id="pin-input"
+        placeholder="6-digit PIN"
+        maxlength="6"
+        pattern="\d{6}"
+        inputmode="numeric"
+        style="width: 120px; padding: 8px 12px; border: 1px solid #ccc; border-radius: 4px; font-size: 16px; text-align: center; letter-spacing: 4px;"
+      />
+      <p style="font-size: 12px; color: #65676b; margin-top: 4px;">Required to register your phone number with WhatsApp Cloud API.</p>
+    </div>
     <button id="login-btn" class="fb-btn" onclick="launchWhatsAppSignup()" disabled>
       <svg width="20" height="20" viewBox="0 0 24 24" fill="#fff"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg>
       Login with Facebook
@@ -348,6 +361,45 @@
       }
     }
 
+    // ─── Register phone number with WhatsApp Cloud API ────────────────
+    async function registerPhoneNumber(phone_number_id, access_token) {
+      const pin = document.getElementById('pin-input').value;
+      if (!pin || !/^\d{6}$/.test(pin)) {
+        console.warn('Skipping phone registration: no valid 6-digit PIN provided');
+        return null;
+      }
+      if (!phone_number_id) {
+        console.warn('Skipping phone registration: no phone_number_id available');
+        return null;
+      }
+
+      try {
+        console.log('Registering phone number in background:', phone_number_id);
+        setStatus('Registering phone number with WhatsApp...', 'info');
+
+        const backendUrl = window.BACKEND_API_URL || window.location.origin;
+        const response = await fetch(backendUrl + '/api/register-phone', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ phone_number_id, access_token, pin })
+        });
+
+        const data = await response.json();
+        console.log('Phone registration response:', data);
+
+        if (!response.ok) {
+          throw new Error(data.error || 'Registration failed');
+        }
+
+        setStatus('Phone number registered with WhatsApp Cloud API!', 'success');
+        return data;
+      } catch (err) {
+        console.error('Phone registration error:', err);
+        setStatus('Phone registered but Cloud API registration failed: ' + err.message, 'error');
+        return null;
+      }
+    }
+
     // ─── Facebook Login callback ─────────────────────────────────────
     function fbLoginCallback(response) {
       if (response.authResponse) {
@@ -364,8 +416,10 @@
           waba_id: lastSignupData.waba_id || null
         });
 
-        // Exchange code asynchronously (don't await here)
-        exchangeCodeForAccessToken(code).then((access_token) => {
+        // Exchange code asynchronously, then register phone in background
+        const phoneId = lastSignupData.phone_number_id || null;
+
+        exchangeCodeForAccessToken(code).then(async (access_token) => {
           if (access_token) {
             // Update the token with the exchanged access token
             const tokens = getStoredTokens();
@@ -373,6 +427,19 @@
               tokens[tokens.length - 1].access_token = access_token;
               localStorage.setItem(STORAGE_KEY, JSON.stringify(tokens));
               renderTokens();
+            }
+
+            // Register phone number in background
+            if (phoneId) {
+              const regResult = await registerPhoneNumber(phoneId, access_token);
+              if (regResult) {
+                const updated = getStoredTokens();
+                if (updated.length > 0) {
+                  updated[updated.length - 1].phone_registered = true;
+                  localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+                  renderTokens();
+                }
+              }
             }
           }
         });
