@@ -141,6 +141,67 @@ app.post('/api/exchange-token', async (req, res) => {
 });
 
 /**
+ * Register Business Phone Number
+ * POST /api/register-phone
+ *
+ * Body: { phone_number_id, access_token, pin }
+ * Calls: POST https://graph.facebook.com/v25.0/{phone_number_id}/register
+ */
+app.post('/api/register-phone', async (req, res) => {
+  try {
+    const { phone_number_id, access_token, pin } = req.body;
+
+    if (!phone_number_id || !access_token || !pin) {
+      return res.status(400).json({ error: 'phone_number_id, access_token, and pin are required' });
+    }
+
+    if (!/^\d{6}$/.test(pin)) {
+      return res.status(400).json({ error: 'pin must be a 6-digit number' });
+    }
+
+    console.log('Registering phone number:', phone_number_id);
+
+    const registerUrl = `https://graph.facebook.com/v25.0/${encodeURIComponent(phone_number_id)}/register`;
+
+    const response = await fetch(registerUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${access_token}`
+      },
+      body: JSON.stringify({
+        messaging_product: 'whatsapp',
+        pin
+      })
+    });
+
+    const data = await response.json();
+
+    console.log('Phone registration response:', { status: response.status, data });
+
+    if (!response.ok || data.error) {
+      return res.status(response.status || 400).json({
+        error: data.error?.message || 'Failed to register phone number',
+        details: data
+      });
+    }
+
+    return res.json({
+      success: true,
+      message: 'Phone number registered successfully',
+      details: data
+    });
+
+  } catch (error) {
+    console.error('Registration error:', error);
+    return res.status(500).json({
+      error: 'Internal server error',
+      message: error.message
+    });
+  }
+});
+
+/**
  * Verify stored token endpoint
  * POST /api/verify-token
  * 
@@ -193,6 +254,7 @@ app.listen(PORT, () => {
   console.log(`\n✅ Facebook Token Exchange Server running on http://localhost:${PORT}`);
   console.log(`\nEndpoints:`);
   console.log(`  POST /api/exchange-token  - Exchange authorization code for access token`);
+  console.log(`  POST /api/register-phone  - Register phone number with WhatsApp Cloud API`);
   console.log(`  POST /api/verify-token    - Verify and inspect an access token`);
   console.log(`  GET  /health             - Health check\n`);
 });
